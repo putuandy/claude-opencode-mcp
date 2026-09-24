@@ -1,0 +1,86 @@
+name: Bug report
+description: Report a reproducible problem with the bridge
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report! Please redact API keys, tokens, and private code
+        before pasting logs or error output.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: The exact tool call(s) or prompt, and the repository shape if relevant.
+      placeholder: |
+        1. In Claude Code, ask: ...
+        2. The bridge calls delegate_task with ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: error
+    attributes:
+      label: Error output
+      description: The JSON error (including `request_id`) and relevant bridge log lines.
+      render: json
+    validations:
+      required: false
+  - type: input
+    id: bridge-version
+    attributes:
+      label: Bridge version
+      description: Output of `claude-opencode-mcp --version`
+    validations:
+      required: true
+  - type: input
+    id: opencode-version
+    attributes:
+      label: OpenCode version
+      description: Output of `opencode --version`
+    validations:
+      required: true
+  - type: input
+    id: node-version
+    attributes:
+      label: Node.js version
+      description: Output of `node --version`
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - macOS
+        - Linux
+        - Windows (WSL)
+        - Windows (native)
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: config
+    attributes:
+      label: Relevant configuration
+      description: Your bridge config and agent overrides (redact credentials).
+      render: json
+    validations:
+      required: false
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues for duplicates
+          required: true
+        - label: I removed credentials and private code from this report
+          required: true

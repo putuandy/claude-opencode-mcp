@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security report
+    url: https://github.com/putuandy/claude-opencode-mcp/security/advisories/new
+    about: Report vulnerabilities privately (never in a public issue).
+  - name: Documentation
+    url: https://github.com/putuandy/claude-opencode-mcp/tree/main/docs
+    about: Installation, configuration, security model, troubleshooting.
+  - name: Questions and ideas
+    url: https://github.com/putuandy/claude-opencode-mcp/discussions
+    about: Ask questions and discuss usage patterns.

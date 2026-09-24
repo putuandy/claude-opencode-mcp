@@ -1,0 +1,79 @@
+{
+  "name": "claude-opencode-mcp",
+  "version": "1.0.0",
+  "description": "MCP bridge that lets Claude Code delegate software-engineering tasks to OpenCode agents (DeepSeek by default) inside the same workspace.",
+  "type": "module",
+  "license": "MIT",
+  "author": "claude-opencode-mcp contributors",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/putuandy/claude-opencode-mcp.git"
+  },
+  "homepage": "https://github.com/putuandy/claude-opencode-mcp#readme",
+  "bugs": {
+    "url": "https://github.com/putuandy/claude-opencode-mcp/issues"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "claude-code",
+    "opencode",
+    "deepseek",
+    "coding-agent"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "claude-opencode-mcp": "./dist/index.js",
+    "claude-opencode": "./dist/index.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "agents",
+    "docs",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    "SECURITY.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepare": "npm run build",
+    "prepack": "npm run build",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "format": "biome format --write .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "npm run build && cross-env CLAUDE_OPENCODE_E2E=1 vitest run --config vitest.e2e.config.ts",
+    "dev": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.1",
+    "@opencode-ai/sdk": "^1.18.32",
+    "commander": "^14.0.3",
+    "yaml": "^2.9.1",
+    "zod": "^4.6.5"
+  },
+  "optionalDependencies": {
+    "opencode-ai": "^1.18.32"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.14",
+    "@types/node": "^26.6.2",
+    "cross-env": "^10.1.0",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.11"
+  }
+}

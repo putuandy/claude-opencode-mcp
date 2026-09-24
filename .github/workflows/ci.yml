@@ -1,0 +1,95 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Node ${{ matrix.node }} (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        node: ["20", "22", "24"]
+        include:
+          - os: macos-latest
+            node: "24"
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Node ${{ matrix.node }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      # Installs optionalDependencies too, which is the real fresh-install
+      # experience (opencode-ai); the init integration test adapts when the
+      # binary is unavailable.
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit and integration tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Executable smoke test
+        run: |
+          node dist/index.js --version
+          node dist/index.js --help
+
+      - name: Packaging check
+        run: npm pack --dry-run
+
+  e2e:
+    name: Real OpenCode E2E (opt-in, push only)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Push-only: never expose secrets to fork pull requests.
+    if: ${{ github.event_name == 'push' && vars.CLAUDE_OPENCODE_E2E == '1' }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Requires a repository secret named OPENCODE_AUTH_JSON containing a
+      # valid OpenCode auth.json (DeepSeek credential). Never commit credentials.
+      - name: Restore OpenCode credentials
+        run: |
+          mkdir -p "$HOME/.local/share/opencode"
+          printf '%s' "${{ secrets.OPENCODE_AUTH_JSON }}" > "$HOME/.local/share/opencode/auth.json"
+
+      - name: Run real E2E checkpoints
+        run: npm run test:e2e
