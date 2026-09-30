@@ -43,6 +43,8 @@ export interface EnsureServerInput {
   cwd: string;
   config: ResolvedConfig;
   agentConfig: Record<string, unknown>;
+  /** Agent names that must exist (external servers only). Defaults to all agentConfig keys. */
+  requiredAgents?: string[];
 }
 
 export interface OpenCodeManagerOptions {
@@ -90,6 +92,8 @@ export class OpenCodeManager {
   private readonly servers = new Map<string, ServerRecord>();
   /** Every spawned child, tracked from creation so shutdown can always kill it. */
   private readonly children = new Set<ChildProcess>();
+  /** In-flight startup deduplication: concurrent ensures share one spawn. */
+  private readonly inflight = new Map<string, Promise<string>>();
   private readonly logger: Logger;
   private readonly env: NodeJS.ProcessEnv;
   private readonly resolver: BinaryResolver;
@@ -113,10 +117,32 @@ export class OpenCodeManager {
     if (this.stopping) {
       throw new BridgeError("OPENCODE_UNAVAILABLE", "The bridge is shutting down.");
     }
+    const key = this.dedupKey(input);
+    const pending = this.inflight.get(key);
+    if (pending) return pending;
+
+    const task = (
+      input.config.opencode.url ? this.ensureExternal(input) : this.ensureLocal(input)
+    ).finally(() => {
+      this.inflight.delete(key);
+    });
+    this.inflight.set(key, task);
+    return task;
+  }
+
+  /** Stable key for startup deduplication (credentials excluded). */
+  private dedupKey(input: EnsureServerInput): string {
     if (input.config.opencode.url) {
-      return this.ensureExternal(input);
+      try {
+        const url = new URL(input.config.opencode.url);
+        url.username = "";
+        url.password = "";
+        return `external:${normalizeBaseUrl(url.toString())}`;
+      } catch {
+        return `external:${input.config.opencode.url}`;
+      }
     }
-    return this.ensureLocal(input);
+    return `local:${input.cwd}`;
   }
 
   async clientFor(input: EnsureServerInput): Promise<OpencodeClient> {
@@ -196,7 +222,7 @@ export class OpenCodeManager {
     let record = this.servers.get(key);
     if (record && !record.dead) {
       record.lastUsedAt = Date.now();
-      await this.assertAgentsAvailable(record, input.agentConfig, input.cwd);
+      await this.assertAgentsAvailable(record, input, input.cwd);
       return key;
     }
 
@@ -227,7 +253,7 @@ export class OpenCodeManager {
       stderr: [],
     };
     this.servers.set(key, record);
-    await this.assertAgentsAvailable(record, input.agentConfig, input.cwd);
+    await this.assertAgentsAvailable(record, input, input.cwd);
     this.logger.info("connected to external OpenCode server", {
       url: baseUrl,
       version: health.version,
@@ -237,10 +263,13 @@ export class OpenCodeManager {
 
   private async assertAgentsAvailable(
     record: ServerRecord,
-    agentConfig: Record<string, unknown>,
+    input: EnsureServerInput,
     cwd: string,
   ): Promise<void> {
-    const required = Object.keys(agentConfig);
+    const required =
+      input.requiredAgents && input.requiredAgents.length > 0
+        ? [...new Set(input.requiredAgents)]
+        : Object.keys(input.agentConfig);
     if (required.length === 0) return;
     const client =
       record.clients.get(cwd) ??

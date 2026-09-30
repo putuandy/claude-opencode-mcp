@@ -42,6 +42,7 @@ async function makeFakeBinary(dir: string, url: string, pidFile: string): Promis
       "#!/bin/sh",
       'if [ "$1" = "--version" ]; then echo "fake-9.9.9"; exit 0; fi',
       `echo $$ > "${pidFile}"`,
+      `echo started >> "${pidFile}.spawns"`,
       `echo "opencode server listening on ${url}"`,
       "exec sleep 300",
       "",
@@ -73,6 +74,40 @@ afterEach(async () => {
 });
 
 describe("OpenCodeManager child-process cleanup", () => {
+  it("spawns exactly one server for concurrent ensures", async () => {
+    const fake = new FakeOpenCode();
+    const url = await fake.listen();
+    try {
+      const dir = await tempDir();
+      const pidFile = path.join(dir, "fake.pid");
+      const binary = await makeFakeBinary(dir, url, pidFile);
+      const config = BridgeConfigSchema.parse({
+        opencode: { binary, autoStart: true, startupTimeout: 8000 },
+      });
+      const manager = new OpenCodeManager({
+        logger: createLogger({ level: "silent" }),
+        env: { ...process.env, OPENCODE_SERVER_PASSWORD: undefined },
+      });
+
+      const keys = await Promise.all([
+        manager.ensure({ cwd: dir, config, agentConfig: {} }),
+        manager.ensure({ cwd: dir, config, agentConfig: {} }),
+        manager.ensure({ cwd: dir, config, agentConfig: {} }),
+      ]);
+      expect(new Set(keys).size).toBe(1);
+      expect(manager.getStatus()).toHaveLength(1);
+
+      const spawns = (await fs.promises.readFile(`${pidFile}.spawns`, "utf8"))
+        .split("\n")
+        .filter(Boolean);
+      expect(spawns).toHaveLength(1);
+
+      await manager.stopAll();
+    } finally {
+      await fake.close();
+    }
+  });
+
   it("stopAll kills the spawned OpenCode process", async () => {
     const fake = new FakeOpenCode();
     const url = await fake.listen();

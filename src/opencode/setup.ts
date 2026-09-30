@@ -9,9 +9,12 @@ import { type ResolveWorkspaceInput, resolveWorkspace } from "../workspace/resol
 import {
   agentCapabilities,
   buildAgentDefinitions,
+  expandAgentVariants,
   findAgentDefinition,
+  isVariantAgentName,
   loadBuiltinAgentDefinitions,
   loadProjectAgentDefinitions,
+  resolveAgentVariant,
   toOpenCodeAgentConfig,
 } from "./agents.js";
 import type { OpenCodeManager } from "./manager.js";
@@ -21,13 +24,20 @@ export interface PrepareRunInput {
   cwd?: string | undefined;
   agent?: string | undefined;
   model?: string | undefined;
+  /** Orchestrator override: grant/revoke file edits for this run. */
+  allowEdits?: boolean | undefined;
+  /** Orchestrator override: grant/revoke shell commands for this run. */
+  allowBash?: boolean | undefined;
 }
 
 export interface PreparedRun {
   workspace: AgentWorkspace;
   config: ResolvedConfig;
   definitions: AgentDefinition[];
+  /** Agent definition actually used for the prompt (may be a variant). */
   definition: AgentDefinition;
+  /** Base agent name shown to the orchestrator. */
+  baseAgentName: string;
   capabilities: ProfileCapabilities;
   client: OpencodeClient;
   serverKey: string;
@@ -132,28 +142,47 @@ export async function prepareRun(
     throw new BridgeError("AGENT_NOT_FOUND", `Unknown agent: ${agentName}`, {
       details: {
         requested: agentName,
-        available: definitions.map((entry) => entry.name),
+        available: definitions
+          .filter((entry) => !isVariantAgentName(entry.name))
+          .map((entry) => entry.name),
       },
     });
   }
 
-  const agentConfig = toOpenCodeAgentConfig(definitions, config);
-  const serverKey = await deps.manager.ensure({
+  // The orchestrator can grant or revoke edits/shell per call; the override is
+  // expressed as a generated variant agent with a safe permission profile.
+  const variant = resolveAgentVariant(definition, {
+    ...(input.allowEdits !== undefined ? { allowEdits: input.allowEdits } : {}),
+    ...(input.allowBash !== undefined ? { allowBash: input.allowBash } : {}),
+  });
+  const allDefinitions = expandAgentVariants(definitions);
+  const promptDefinition = allDefinitions.find((entry) => entry.name === variant.name);
+  if (!promptDefinition) {
+    throw new BridgeError("AGENT_NOT_FOUND", `Agent variant is unavailable: ${variant.name}`, {
+      details: { base: definition.name, variant: variant.name },
+    });
+  }
+
+  const agentConfig = toOpenCodeAgentConfig(allDefinitions, config);
+  const serverInput = {
     cwd: workspace.cwd,
     config,
     agentConfig,
-  });
+    requiredAgents: [...new Set([definition.name, variant.name])],
+  };
+  const serverKey = await deps.manager.ensure(serverInput);
 
-  const client = await deps.manager.clientFor({ cwd: workspace.cwd, config, agentConfig });
+  const client = await deps.manager.clientFor(serverInput);
   await assertWorkspaceRouting(client, workspace, deps.logger);
   const resolved = await resolveModel(client, config, input.model ?? definition.model);
 
   return {
-    workspace: { ...workspace, readOnly: agentCapabilities(definition).readOnly },
+    workspace: { ...workspace, readOnly: variant.capabilities.readOnly },
     config,
     definitions,
-    definition,
-    capabilities: agentCapabilities(definition),
+    definition: promptDefinition,
+    baseAgentName: definition.name,
+    capabilities: variant.capabilities,
     client,
     serverKey,
     model: resolved,
@@ -167,9 +196,32 @@ export async function getClientForWorkspace(
   definitions: AgentDefinition[],
   config: ResolvedConfig,
 ): Promise<{ client: OpencodeClient; serverKey: string }> {
-  const agentConfig = toOpenCodeAgentConfig(definitions, config);
+  const agentConfig = toOpenCodeAgentConfig(expandAgentVariants(definitions), config);
   const serverKey = await deps.manager.ensure({ cwd: workspace.cwd, config, agentConfig });
   const client = await deps.manager.clientFor({ cwd: workspace.cwd, config, agentConfig });
   await assertWorkspaceRouting(client, workspace, deps.logger);
   return { client, serverKey };
+}
+
+/**
+ * Compute the override the orchestrator effectively applied to a prepared run,
+ * for display in the task context. Returns undefined when the capabilities
+ * match the base agent's defaults.
+ */
+export function effectivePermissionOverride(
+  prepared: PreparedRun,
+): { allowEdits?: boolean; allowBash?: boolean } | undefined {
+  const base = prepared.definitions.find((entry) => entry.name === prepared.baseAgentName);
+  const baseCapabilities = base ? agentCapabilities(base) : null;
+  if (
+    baseCapabilities &&
+    baseCapabilities.canEdit === prepared.capabilities.canEdit &&
+    baseCapabilities.canRunBash === prepared.capabilities.canRunBash
+  ) {
+    return undefined;
+  }
+  return {
+    allowEdits: prepared.capabilities.canEdit,
+    allowBash: prepared.capabilities.canRunBash,
+  };
 }

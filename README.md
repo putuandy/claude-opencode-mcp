@@ -236,26 +236,30 @@ files_changed, duration_ms, truncated, error? }`.
 
 - `paths` are exploration hints, not a boundary — the agent may inspect the
   whole workspace.
-- `allow_edits: false` disables the `edit`/`write`/`apply_patch` tools for that
-  call (the agent's own profile still applies; see [Security](#security)).
+- `allow_edits` / `allow_bash` grant or revoke edits and shell commands for the
+  run (safe permission profiles; sensitive files and git history stay
+  protected).
 - `findings` are parsed from a `## Findings` section:
   `- [severity: high] Title (path/to/file:42) — detail`.
 
 ### `create_session`
 
 ```json
-{ "cwd": "/abs/path", "agent": "deepseek-researcher", "model": null, "title": "auth investigation" }
+{ "cwd": "/abs/path", "agent": "deepseek-researcher", "model": null, "title": "auth investigation", "allow_edits": true }
 ```
 
-Returns `{ session_id, cwd, agent, model, title, status, created_at }`.
+Returns `{ session_id, cwd, agent, model, title, status, can_edit, can_run_bash, created_at }`.
+Permission overrides set here persist for the session.
 
 ### `send_message`
 
-Continue a session; the agent keeps its context.
+Continue a session; the agent keeps its context and permission level.
 
 ```json
-{ "session_id": "ses_...", "message": "Now inspect the database layer for the same issue." }
+{ "session_id": "ses_...", "message": "Now implement the fix.", "allow_edits": true }
 ```
+
+`allow_edits` / `allow_bash` may change the level from this message onward.
 
 ### `get_session`
 
@@ -283,18 +287,33 @@ Lists the built-in agents plus project-local agents from
 
 ## Agents
 
-| Agent | Purpose | Edit | Shell |
+| Agent | Purpose | Edit default | Shell default |
 | --- | --- | --- | --- |
 | `deepseek-researcher` | architecture, exploration, dependency analysis, recommendations | deny | deny |
 | `deepseek-reviewer` | code review, bugs, regressions, security, architecture | deny | deny |
 | `deepseek-coder` | implementation, refactoring, running tests and fixing failures | allow | allow (no `git commit`/`git push`) |
 | `deepseek-tester` | run tests, inspect failures, root causes, suggested fixes | deny | allow (no `git commit`/`git push`) |
 
+The orchestrator is not limited to those defaults: every tool that starts or
+continues a run accepts `allow_edits` and `allow_bash` (`true` grants, `false`
+revokes, omitted keeps the default). Grants map to safe permission profiles, so
+`allow_edits: true` still protects `.env`/credential files and `allow_bash: true`
+still denies git history changes. A researcher with write access is one call:
+
+```json
+{
+  "agent": "deepseek-researcher",
+  "task": "Investigate the caching layer, then implement and test the fix.",
+  "allow_edits": true,
+  "allow_bash": true
+}
+```
+
 Agent prompts live in [`agents/`](agents/) and are loaded into the OpenCode
 server configuration at startup. Project-local copies in
 `.claude-opencode/agents/*.md` override the prompt, description, model and
 temperature; permissions always come from the bridge policy (configurable
-through `security.*`).
+through `security.*` and the per-call overrides).
 
 See [docs/agent-configuration.md](docs/agent-configuration.md) for frontmatter
 details and custom agents.
@@ -334,8 +353,8 @@ its working directory.
 | Workspace must exist, be readable, be a directory | always | bridge |
 | `workspace.allowedRoots` containment | disabled (empty) | config |
 | Path hints cannot escape the workspace | always | bridge |
-| `.env`/`.env.*`, keys, `credentials`, `.ssh/*` protection | on | OpenCode permissions |
-| `git commit` / `git push` for shell-enabled agents | denied | OpenCode permissions |
+| `.env`/`.env.*`, keys, `credentials`, `.ssh/*` protection | on, even when edits are granted | OpenCode permissions |
+| `git commit` / `git push` for shell-enabled agents | denied, even when shell is granted | OpenCode permissions |
 | Paths outside the workspace | denied | OpenCode `external_directory` |
 | Subagent spawning (`task`) | denied | OpenCode permissions |
 | Interactive questions (`question`) | denied (headless) | OpenCode permissions |

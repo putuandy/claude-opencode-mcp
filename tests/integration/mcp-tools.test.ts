@@ -151,6 +151,22 @@ describe("delegate_task", () => {
     expect(fake.prompts[0]?.agent).toBe("deepseek-reviewer");
     expect(fake.prompts[0]?.text).toContain(workspace);
     expect(fake.prompts[0]?.text).toContain("Review the auth module");
+    expect(fake.syncPromptCalls).toBe(0);
+  });
+
+  it("waits for the final message after tool-call steps", async () => {
+    await setupApp({
+      fakeOptions: { onPrompt: () => ({ text: "FINAL ANSWER", toolStep: true }) },
+    });
+    const workspace = await tempDir();
+    const result = parse(
+      await client.callTool({
+        name: "delegate_task",
+        arguments: { cwd: workspace, agent: "deepseek-coder", task: "do work" },
+      }),
+    );
+    expect(result.status).toBe("completed");
+    expect(result.summary).toBe("FINAL ANSWER");
   });
 
   it("parses findings from the agent output", async () => {
@@ -214,14 +230,88 @@ describe("delegate_task", () => {
     expect(parse(result).error.code).toBe("INVALID_PATH");
   });
 
-  it("honours allow_edits=false by disabling edit tools", async () => {
+  it("grants edits to a read-only agent when the orchestrator asks", async () => {
+    await setupApp({});
+    const workspace = await tempDir();
+    await client.callTool({
+      name: "delegate_task",
+      arguments: { cwd: workspace, task: "Do research and write notes", allow_edits: true },
+    });
+    expect(fake.prompts[0]?.agent).toBe("deepseek-researcher__edit");
+  });
+
+  it("grants edits and shell together with both overrides", async () => {
+    await setupApp({});
+    const workspace = await tempDir();
+    await client.callTool({
+      name: "delegate_task",
+      arguments: {
+        cwd: workspace,
+        agent: "deepseek-researcher",
+        task: "Implement and test",
+        allow_edits: true,
+        allow_bash: true,
+      },
+    });
+    expect(fake.prompts[0]?.agent).toBe("deepseek-researcher__rw");
+  });
+
+  it("revokes edits from a coding agent when the orchestrator asks", async () => {
     await setupApp({});
     const workspace = await tempDir();
     await client.callTool({
       name: "delegate_task",
       arguments: { cwd: workspace, agent: "deepseek-coder", task: "Edit", allow_edits: false },
     });
-    expect(fake.prompts[0]?.tools).toEqual({ edit: false, write: false, apply_patch: false });
+    // coder defaults to edits+shell; revoking edits keeps shell.
+    expect(fake.prompts[0]?.agent).toBe("deepseek-coder__bash");
+  });
+
+  it("keeps the default agent name when no override is requested", async () => {
+    await setupApp({});
+    const workspace = await tempDir();
+    await client.callTool({
+      name: "delegate_task",
+      arguments: { cwd: workspace, task: "x" },
+    });
+    expect(fake.prompts[0]?.agent).toBe("deepseek-researcher");
+  });
+
+  it("persists orchestrator permissions across send_message", async () => {
+    await setupApp({});
+    const workspace = await tempDir();
+    const created = parse(
+      await client.callTool({
+        name: "create_session",
+        arguments: {
+          cwd: workspace,
+          agent: "deepseek-researcher",
+          allow_edits: true,
+          allow_bash: true,
+        },
+      }),
+    );
+    expect(created.can_edit).toBe(true);
+    expect(created.can_run_bash).toBe(true);
+
+    await client.callTool({
+      name: "send_message",
+      arguments: { session_id: created.session_id, message: "First" },
+    });
+    await client.callTool({
+      name: "send_message",
+      arguments: { session_id: created.session_id, message: "Second", allow_edits: false },
+    });
+
+    expect(fake.prompts[0]?.agent).toBe("deepseek-researcher__rw");
+    // Revoking edits keeps shell at the variant level.
+    expect(fake.prompts[1]?.agent).toBe("deepseek-researcher__bash");
+
+    const session = parse(
+      await client.callTool({ name: "get_session", arguments: { session_id: created.session_id } }),
+    );
+    expect(session.can_edit).toBe(false);
+    expect(session.can_run_bash).toBe(true);
   });
 
   it("reports timeouts as AGENT_TIMEOUT without hanging", async () => {
@@ -292,6 +382,36 @@ describe("delegate_task", () => {
     expect(Date.now() - started).toBeLessThan(4000);
     expect(result.isError).toBe(true);
     expect(parse(result).error.code).toBe("OPENCODE_UNAVAILABLE");
+  });
+
+  it("serves multiple concurrent delegations on one server", async () => {
+    await setupApp({
+      fakeOptions: { onPrompt: () => ({ text: "done", delayMs: 400 }) },
+    });
+    const workspace = await tempDir();
+    const results = await Promise.all([
+      client.callTool({
+        name: "delegate_task",
+        arguments: { cwd: workspace, agent: "deepseek-researcher", task: "task one" },
+      }),
+      client.callTool({
+        name: "delegate_task",
+        arguments: { cwd: workspace, agent: "deepseek-coder", task: "task two" },
+      }),
+      client.callTool({
+        name: "delegate_task",
+        arguments: { cwd: workspace, agent: "deepseek-reviewer", task: "task three" },
+      }),
+    ]);
+    for (const result of results) {
+      expect(parse(result).status).toBe("completed");
+    }
+    expect(fake.prompts).toHaveLength(3);
+    expect(new Set(fake.prompts.map((prompt) => prompt.sessionId)).size).toBe(3);
+    expect(manager.getStatus()).toHaveLength(1);
+    // Regression guard: a synchronous prompt would hit Node fetch's 5-minute
+    // headers timeout for long runs.
+    expect(fake.syncPromptCalls).toBe(0);
   });
 
   it("rejects oversized inputs instead of forwarding them", async () => {

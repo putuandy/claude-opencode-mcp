@@ -1,6 +1,6 @@
 {
   "name": "claude-opencode-mcp",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "MCP bridge that lets Claude Code delegate software-engineering tasks to OpenCode agents (DeepSeek by default) inside the same workspace.",
   "type": "module",
   "license": "MIT",

@@ -299,6 +299,94 @@ describe.skipIf(!ENABLED)("E2E with real OpenCode + DeepSeek", () => {
   );
 
   it(
+    "Phase 4: orchestrator can grant write access to the researcher",
+    async () => {
+      const result = parse(
+        await client.callTool({
+          name: "delegate_task",
+          arguments: {
+            cwd: repoA,
+            agent: "deepseek-researcher",
+            task: "Create a file named researcher-note.md containing exactly the line: granted write. Then reply DONE.",
+            allow_edits: true,
+          },
+        }),
+      );
+      expect(result.status).toBe("completed");
+      const note = await fs.promises.readFile(path.join(repoA, "researcher-note.md"), "utf8");
+      expect(note).toContain("granted write");
+      await fs.promises.rm(path.join(repoA, "researcher-note.md"), { force: true });
+    },
+    TIMEOUT,
+  );
+
+  it(
+    "Phase 6: granted edits still cannot modify .env",
+    async () => {
+      const secretPath = path.join(repoA, ".env");
+      await fs.promises.writeFile(secretPath, `SECRET=protected-${Date.now()}\n`);
+      const result = parse(
+        await client.callTool({
+          name: "delegate_task",
+          arguments: {
+            cwd: repoA,
+            agent: "deepseek-researcher",
+            task: "Edit the file .env in the project root: append the line EXTRA=1 to it. Reply DONE when finished.",
+            allow_edits: true,
+          },
+        }),
+      );
+      expect(result.status).toBe("completed");
+      const after = await fs.promises.readFile(secretPath, "utf8");
+      expect(after).not.toContain("EXTRA=1");
+      await fs.promises.rm(secretPath, { force: true });
+    },
+    TIMEOUT,
+  );
+  it(
+    "Phase 4: orchestrator can grant shell access to the researcher",
+    async () => {
+      const result = parse(
+        await client.callTool({
+          name: "delegate_task",
+          arguments: {
+            cwd: repoA,
+            agent: "deepseek-researcher",
+            task: "Run the shell command `echo shell-granted` and report its exact output.",
+            allow_bash: true,
+          },
+        }),
+      );
+      expect(result.status).toBe("completed");
+      expect(result.summary).toContain("shell-granted");
+    },
+    TIMEOUT,
+  );
+
+  it(
+    "Phase 4: researcher with edits+shell can write through the shell",
+    async () => {
+      const result = parse(
+        await client.callTool({
+          name: "delegate_task",
+          arguments: {
+            cwd: repoA,
+            agent: "deepseek-researcher",
+            task: "Use the shell to create a file named researcher-shell.txt containing the line: shell-granted. Then run `cat researcher-shell.txt` and report the output.",
+            allow_edits: true,
+            allow_bash: true,
+          },
+        }),
+      );
+      expect(result.status).toBe("completed");
+      const written = await fs.promises.readFile(path.join(repoA, "researcher-shell.txt"), "utf8");
+      expect(written).toContain("shell-granted");
+      await fs.promises.rm(path.join(repoA, "researcher-shell.txt"), { force: true });
+    },
+    TIMEOUT,
+  );
+
+  it(
     "Checkpoint 3: stdio MCP server works end-to-end",
     async () => {
       const transport = new StdioClientTransport({

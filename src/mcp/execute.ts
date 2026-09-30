@@ -34,7 +34,6 @@ export interface ExecuteRunInput {
   session: AgentSession;
   text: string;
   timeoutMs: number;
-  disableEdits: boolean;
   extra: ToolExtra;
   requestId: string;
 }
@@ -56,11 +55,10 @@ export async function executeRun(ctx: AppContext, input: ExecuteRunInput): Promi
     const result = await runPrompt({
       client: prepared.client,
       sessionId: session.id,
-      agent: session.agent,
+      agent: session.promptAgent ?? session.agent,
       model: prepared.model,
       text: input.text,
       timeoutMs: input.timeoutMs,
-      disableEdits: input.disableEdits,
       ...(progress ? { onProgress: progress } : {}),
       ...(input.extra.signal ? { signal: input.extra.signal } : {}),
       logger: runLogger,

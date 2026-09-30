@@ -7,6 +7,8 @@ export interface TaskContextInput {
   hints: string[];
   capabilities: ProfileCapabilities;
   agentName: string;
+  /** Orchestrator permission override for this run, when one was requested. */
+  override?: { allowEdits?: boolean | undefined; allowBash?: boolean | undefined };
   /** Compact context is used for follow-up messages inside an existing session. */
   compact?: boolean;
 }
@@ -17,6 +19,24 @@ function permissionLines(capabilities: ProfileCapabilities): string {
     `- shell commands: ${capabilities.canRunBash ? "allowed" : "denied"}`,
     `- read-only agent: ${capabilities.readOnly ? "yes" : "no"}`,
   ].join("\n");
+}
+
+function overrideLines(override: TaskContextInput["override"]): string | null {
+  if (!override || (override.allowEdits === undefined && override.allowBash === undefined)) {
+    return null;
+  }
+  const lines = ["Override (from the orchestrator for this run):"];
+  if (override.allowEdits !== undefined) {
+    lines.push(`- file edits: ${override.allowEdits ? "granted" : "revoked"}`);
+  }
+  if (override.allowBash !== undefined) {
+    lines.push(`- shell commands: ${override.allowBash ? "granted" : "revoked"}`);
+  }
+  lines.push("These take precedence over your role's default restrictions for this run.");
+  if (override.allowEdits ?? override.allowBash) {
+    lines.push("You may now perform the actions granted above when the task requires it.");
+  }
+  return lines.join("\n");
 }
 
 function instructionLines(capabilities: ProfileCapabilities): string {
@@ -50,6 +70,7 @@ export function buildTaskPrompt(input: TaskContextInput): string {
     hints.length > 0
       ? hints.map((hint) => `- ${hint}`).join("\n")
       : "- none supplied; discover the relevant files yourself";
+  const override = overrideLines(input.override);
 
   if (input.compact) {
     return [
@@ -62,6 +83,7 @@ export function buildTaskPrompt(input: TaskContextInput): string {
       "",
       "Constraints:",
       permissionLines(capabilities),
+      override,
     ]
       .filter((line): line is string => line !== null)
       .join("\n");
@@ -82,8 +104,11 @@ export function buildTaskPrompt(input: TaskContextInput): string {
     "",
     "Permissions:",
     permissionLines(capabilities),
+    override,
     "",
     "Instructions:",
     instructionLines(capabilities),
-  ].join("\n");
+  ]
+    .filter((line): line is string => line !== null)
+    .join("\n");
 }

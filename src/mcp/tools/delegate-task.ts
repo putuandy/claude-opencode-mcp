@@ -13,8 +13,8 @@ import { errorResult, jsonResult, type ToolExtra } from "../tool-utils.js";
 export const DELEGATE_TASK_DESCRIPTION = [
   "Delegate a software-engineering task to an OpenCode agent (DeepSeek by default) that runs in the same workspace.",
   "The agent explores the repository itself and returns a concise summary plus structured findings.",
-  "Read-only agents (deepseek-researcher, deepseek-reviewer) cannot modify files; deepseek-coder can edit and run tests.",
-  "Set allow_edits=false to force edit tools off for this call.",
+  "Every agent can be granted or denied edits and shell access per call with allow_edits / allow_bash;",
+  "grants still enforce the bridge security policy (sensitive-file protection for edits, no git history changes for shell).",
   "Returns { status, session_id, summary, findings, files_changed }.",
 ].join(" ");
 
@@ -64,7 +64,15 @@ export function registerDelegateTask(server: McpServer, ctx: AppContext): void {
         allow_edits: z
           .boolean()
           .optional()
-          .describe("When false, edit/write tools are disabled for this call."),
+          .describe(
+            "Grant (true) or revoke (false) file edits for this call. Omit to use the agent's default.",
+          ),
+        allow_bash: z
+          .boolean()
+          .optional()
+          .describe(
+            "Grant (true) or revoke (false) shell commands for this call. Omit to use the agent's default.",
+          ),
       },
       annotations: { openWorldHint: true },
     },
@@ -77,6 +85,7 @@ export function registerDelegateTask(server: McpServer, ctx: AppContext): void {
         model?: string;
         timeout?: number;
         allow_edits?: boolean;
+        allow_bash?: boolean;
       },
       extra: ToolExtra,
     ) => {
@@ -86,19 +95,29 @@ export function registerDelegateTask(server: McpServer, ctx: AppContext): void {
           cwd: args.cwd,
           agent: args.agent,
           model: args.model,
+          ...(args.allow_edits !== undefined ? { allowEdits: args.allow_edits } : {}),
+          ...(args.allow_bash !== undefined ? { allowBash: args.allow_bash } : {}),
         });
         const hints = resolveWorkspaceHints(prepared.workspace.cwd, args.paths);
         const session = await createDelegatedSession(
           ctx,
           prepared,
-          defaultSessionTitle(prepared.definition.name, args.task),
+          defaultSessionTitle(prepared.baseAgentName, args.task),
         );
         const text = buildTaskPrompt({
           workspace: prepared.workspace,
           task: args.task,
           hints,
           capabilities: prepared.capabilities,
-          agentName: prepared.definition.name,
+          agentName: prepared.baseAgentName,
+          ...(args.allow_edits !== undefined || args.allow_bash !== undefined
+            ? {
+                override: {
+                  ...(args.allow_edits !== undefined ? { allowEdits: args.allow_edits } : {}),
+                  ...(args.allow_bash !== undefined ? { allowBash: args.allow_bash } : {}),
+                },
+              }
+            : {}),
         });
         const timeoutMs = resolveExecutionTimeout(prepared.config, args.timeout);
         const result = await executeRun(ctx, {
@@ -106,7 +125,6 @@ export function registerDelegateTask(server: McpServer, ctx: AppContext): void {
           session,
           text,
           timeoutMs,
-          disableEdits: args.allow_edits === false,
           extra,
           requestId: rid,
         });

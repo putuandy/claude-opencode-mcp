@@ -130,6 +130,62 @@ describe("SessionRegistry", () => {
     expect(registry.get("ses_old")).toBeNull();
     await fs.promises.rm(dir, { recursive: true, force: true });
   });
+
+  it("merges sessions written by another bridge process (no clobbering)", async () => {
+    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "co-reg-"));
+    const file = path.join(dir, "sessions.json");
+    const logger = createLogger({ level: "silent" });
+    const processA = new SessionRegistry(file, logger);
+    const processB = new SessionRegistry(file, logger);
+
+    processA.upsert(
+      createSessionRecord({
+        id: "ses_a",
+        cwd: "/tmp",
+        agent: "deepseek-coder",
+        provider: "deepseek",
+        model: null,
+        title: null,
+      }),
+    );
+    processB.upsert(
+      createSessionRecord({
+        id: "ses_b",
+        cwd: "/tmp",
+        agent: "deepseek-reviewer",
+        provider: "deepseek",
+        model: null,
+        title: null,
+      }),
+    );
+
+    const reloaded = new SessionRegistry(file, logger);
+    expect(reloaded.get("ses_a")).not.toBeNull();
+    expect(reloaded.get("ses_b")).not.toBeNull();
+    await fs.promises.rm(dir, { recursive: true, force: true });
+  });
+
+  it("marks stale running sessions as failed on load", async () => {
+    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "co-reg-"));
+    const file = path.join(dir, "sessions.json");
+    const stale = createSessionRecord({
+      id: "ses_stale",
+      cwd: "/tmp",
+      agent: "deepseek-coder",
+      provider: "deepseek",
+      model: null,
+      title: null,
+    });
+    stale.status = "running";
+    stale.updatedAt = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+    await fs.promises.writeFile(file, JSON.stringify({ version: 1, sessions: [stale] }));
+
+    const registry = new SessionRegistry(file, createLogger({ level: "silent" }));
+    const session = registry.get("ses_stale");
+    expect(session?.status).toBe("failed");
+    expect(session?.lastError?.code).toBe("BRIDGE_RESTARTED");
+    await fs.promises.rm(dir, { recursive: true, force: true });
+  });
 });
 
 describe("serializeError", () => {

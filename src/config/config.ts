@@ -27,7 +27,7 @@ export const AgentOverrideSchema = z.object({
   provider: z.string().optional(),
   temperature: z.number().optional(),
   prompt: z.string().optional(),
-  profile: z.enum(["read", "review", "code", "test"]).optional(),
+  profile: z.enum(["read", "review", "edit", "code", "test"]).optional(),
   enabled: z.boolean().optional(),
 });
 

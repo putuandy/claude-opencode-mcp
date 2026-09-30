@@ -24,7 +24,13 @@ export type SessionStatus = "pending" | "running" | "completed" | "failed" | "ab
 export interface AgentSession {
   id: string;
   cwd: string;
+  /** Base agent name shown to the orchestrator. */
   agent: string;
+  /** Permission-variant agent used for prompts, when it differs from `agent`. */
+  promptAgent?: string;
+  /** Effective per-session capabilities (orchestrator overrides included). */
+  canEdit?: boolean;
+  canRunBash?: boolean;
   provider: string | null;
   model: string | null;
   title: string | null;

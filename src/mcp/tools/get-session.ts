@@ -67,6 +67,8 @@ export function registerGetSession(server: McpServer, ctx: AppContext): void {
           model: session.model,
           title: session.title,
           status: session.status,
+          ...(session.canEdit !== undefined ? { can_edit: session.canEdit } : {}),
+          ...(session.canRunBash !== undefined ? { can_run_bash: session.canRunBash } : {}),
           created_at: session.createdAt,
           updated_at: session.updatedAt,
           ...(session.lastError ? { last_error: session.lastError } : {}),

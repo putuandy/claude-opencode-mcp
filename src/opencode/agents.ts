@@ -10,6 +10,7 @@ import {
   PROFILE_CAPABILITIES,
   type ProfileCapabilities,
   profileForAgent,
+  profileForCapabilities,
 } from "../security/policy.js";
 import type { AgentDefinition, PermissionConfig } from "../types/index.js";
 
@@ -21,6 +22,19 @@ export const BUILTIN_AGENT_NAMES = [
 ] as const;
 
 export type BuiltinAgentName = (typeof BUILTIN_AGENT_NAMES)[number];
+
+/** Internal separator for generated permission-variant agents. */
+export const VARIANT_SEPARATOR = "__";
+
+const PROFILE_SUFFIX: Record<AgentProfile, string> = {
+  read: "ro",
+  review: "ro",
+  edit: "edit",
+  code: "rw",
+  test: "bash",
+};
+
+export const VARIANT_SUFFIXES = ["ro", "edit", "bash", "rw"] as const;
 
 const PROFILE_BY_NAME: Record<string, AgentProfile> = {
   "deepseek-researcher": "read",
@@ -87,7 +101,7 @@ function normalizeMode(value: unknown): "primary" | "subagent" | "all" {
   return value === "primary" || value === "subagent" || value === "all" ? value : "all";
 }
 
-const VALID_PROFILES: ReadonlySet<string> = new Set(["read", "review", "code", "test"]);
+const VALID_PROFILES: ReadonlySet<string> = new Set(["read", "review", "edit", "code", "test"]);
 
 function frontmatterProfile(frontmatter: AgentFrontmatter): AgentProfile | undefined {
   return typeof frontmatter.profile === "string" && VALID_PROFILES.has(frontmatter.profile)
@@ -251,6 +265,91 @@ export function agentPermissions(
   config: ResolvedConfig,
 ): PermissionConfig {
   return buildPermissions(agentProfile(definition), config.security);
+}
+
+/** Orchestrator-supplied per-call permission override. */
+export interface PermissionOverride {
+  allowEdits?: boolean | undefined;
+  allowBash?: boolean | undefined;
+}
+
+export interface ResolvedAgentVariant {
+  /** Agent name to use in the prompt body. */
+  name: string;
+  profile: AgentProfile;
+  capabilities: ProfileCapabilities;
+}
+
+/**
+ * Map a per-call override onto a safe permission profile.
+ *
+ * Overrides never bypass the security policy: granting edits uses the `edit`
+ * profile (which still protects `.env`/credential patterns), granting shell
+ * uses the `test` profile (which still denies git history changes).
+ */
+export function resolveAgentVariant(
+  definition: AgentDefinition,
+  override: PermissionOverride = {},
+): ResolvedAgentVariant {
+  const defaultProfile = agentProfile(definition);
+  const defaultCapabilities = PROFILE_CAPABILITIES[defaultProfile];
+  const hasOverride = override.allowEdits !== undefined || override.allowBash !== undefined;
+  if (!hasOverride) {
+    return { name: definition.name, profile: defaultProfile, capabilities: defaultCapabilities };
+  }
+
+  const canEdit = override.allowEdits ?? defaultCapabilities.canEdit;
+  const canRunBash = override.allowBash ?? defaultCapabilities.canRunBash;
+
+  if (canEdit === defaultCapabilities.canEdit && canRunBash === defaultCapabilities.canRunBash) {
+    return { name: definition.name, profile: defaultProfile, capabilities: defaultCapabilities };
+  }
+
+  const profile = profileForCapabilities(canEdit, canRunBash);
+  const name = `${definition.name}${VARIANT_SEPARATOR}${PROFILE_SUFFIX[profile]}`;
+  return { name, profile, capabilities: PROFILE_CAPABILITIES[profile] };
+}
+
+export function isVariantAgentName(name: string): boolean {
+  return name.includes(VARIANT_SEPARATOR);
+}
+
+/**
+ * Expand every agent into its four permission capability combinations so the
+ * orchestrator can grant or revoke edits/shell per call without restarting
+ * OpenCode. The combination matching an agent's default keeps its original
+ * name; the others get an internal suffix (filtered from list_agents).
+ */
+export function expandAgentVariants(definitions: AgentDefinition[]): AgentDefinition[] {
+  const combos: Array<{ profile: AgentProfile; canEdit: boolean; canRunBash: boolean }> = [
+    { profile: "read", canEdit: false, canRunBash: false },
+    { profile: "edit", canEdit: true, canRunBash: false },
+    { profile: "test", canEdit: false, canRunBash: true },
+    { profile: "code", canEdit: true, canRunBash: true },
+  ];
+  const result: AgentDefinition[] = [];
+  for (const definition of definitions) {
+    if (isVariantAgentName(definition.name)) {
+      throw new BridgeError(
+        "CONFIG_INVALID",
+        `Agent name "${definition.name}" uses the reserved separator "${VARIANT_SEPARATOR}".`,
+      );
+    }
+    const defaultCapabilities = agentCapabilities(definition);
+    for (const combo of combos) {
+      const isDefault =
+        combo.canEdit === defaultCapabilities.canEdit &&
+        combo.canRunBash === defaultCapabilities.canRunBash;
+      result.push({
+        ...definition,
+        name: isDefault
+          ? definition.name
+          : `${definition.name}${VARIANT_SEPARATOR}${PROFILE_SUFFIX[combo.profile]}`,
+        profile: combo.profile,
+      });
+    }
+  }
+  return result;
 }
 
 export interface OpenCodeAgentEntry {

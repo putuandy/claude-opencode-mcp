@@ -90,6 +90,45 @@ every delegated message, and asks agents to finish with a structured response:
 Keep custom prompts aligned with that contract: the orchestrator depends on the
 structure.
 
+## Orchestrator permission overrides
+
+The orchestrator (Claude Code) can grant or revoke edits and shell access for
+any agent, per call:
+
+```json
+{
+  "agent": "deepseek-researcher",
+  "task": "Implement the caching fix and run the tests.",
+  "allow_edits": true,
+  "allow_bash": true
+}
+```
+
+| Flag | `true` | `false` | omitted |
+| --- | --- | --- | --- |
+| `allow_edits` | use the edit-capable profile | deny all file edits | keep the agent default |
+| `allow_bash` | use the shell-capable profile | deny shell commands | keep the agent default |
+
+`delegate_task`, `create_session` and `send_message` all accept the flags.
+Sessions remember their level (`can_edit` / `can_run_bash` in `create_session`
+and `get_session`), and `send_message` can change it from that message onward.
+
+Overrides map to the safe profiles below, so grants never bypass the security
+policy:
+
+| Effective capability | Profile | Notes |
+| --- | --- | --- |
+| no edits, no shell | `read` | default for researcher/reviewer |
+| edits only | `edit` | `.env`/credential files still denied for edit |
+| shell only | `test` | shell allowed, edits denied, git history protected |
+| edits + shell | `code` | full coding profile, git history protected |
+
+The bridge implements overrides with generated variant agents
+(`<agent>__edit`, `<agent>__bash`, `<agent>__rw`) that are hidden from
+`list_agents`; `__` is therefore reserved in agent names. The task message also
+states the granted permissions explicitly, so agents whose prompt describes them
+as read-only do not refuse the work.
+
 ## What the bridge does not do
 
 - It does not copy repository contents into prompts. Agents read files through

@@ -40,7 +40,12 @@ export async function createDelegatedSession(
   const session = createSessionRecord({
     id: opencodeId,
     cwd: prepared.workspace.cwd,
-    agent: prepared.definition.name,
+    agent: prepared.baseAgentName,
+    ...(prepared.definition.name !== prepared.baseAgentName
+      ? { promptAgent: prepared.definition.name }
+      : {}),
+    canEdit: prepared.capabilities.canEdit,
+    canRunBash: prepared.capabilities.canRunBash,
     provider: prepared.model?.providerID ?? null,
     model: prepared.modelString,
     title: title?.trim() ? title.trim() : null,

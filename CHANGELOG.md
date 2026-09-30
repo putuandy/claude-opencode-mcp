@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-09-30
+
+### Added
+
+- **Orchestrator permission overrides.** `delegate_task`, `create_session` and
+  `send_message` accept `allow_edits` and `allow_bash` (true grants, false
+  revokes, omitted keeps the agent default), so any agent — including
+  `deepseek-researcher` — can be given read/write or shell access per call.
+  Grants map to safe profiles: sensitive-file protection still applies to
+  granted edits and git history protection still applies to granted shell
+  access. Sessions persist their permission level (`can_edit` /
+  `can_run_bash`), and the task context states the granted permissions
+  explicitly.
+
+### Fixed
+
+- **Long delegations failed after exactly ~5 minutes with `fetch failed`.**
+  The bridge held a synchronous `POST /session/:id/message` request open for
+  the whole run, and Node's built-in fetch aborts requests that take longer
+  than 5 minutes to return response headers. Runs now use `prompt_async` plus
+  polling, so delegation time is bounded only by the configured timeout.
+- Concurrent delegations to the same workspace could start two OpenCode
+  servers because startup was not deduplicated; in-flight startups are now
+  shared.
+- Multiple Claude sessions (each with its own bridge process) overwrote each
+  other's entries in the shared session registry; persistence now performs a
+  read-merge-write, and stale `running` records from dead bridges are reported
+  as failed instead of running forever.
+
 ## [1.0.0] - 2026-09-24
 
 First stable release.
@@ -52,5 +81,6 @@ First stable release.
 - CI across Node 20/22/24 (Ubuntu) and Node 24 (macOS), plus an opt-in,
   push-only real-provider E2E job.
 
-[Unreleased]: https://github.com/putuandy/claude-opencode-mcp/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/putuandy/claude-opencode-mcp/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/putuandy/claude-opencode-mcp/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/putuandy/claude-opencode-mcp/releases/tag/v1.0.0

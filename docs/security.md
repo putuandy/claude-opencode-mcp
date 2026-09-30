@@ -62,6 +62,22 @@ no automatic commit or push anywhere in the codebase.
 discouraged: nothing answers the prompt in headless mode, although the bridge
 auto-rejects permission events it sees.
 
+## Permission overrides (orchestrator grants)
+
+`delegate_task`, `create_session` and `send_message` accept `allow_edits` and
+`allow_bash`. Grants select one of the four profiles above rather than editing
+rules ad hoc:
+
+- `allow_edits: true` uses the `edit`/`code` profile, where the `.env` and
+  credential edit denials still apply.
+- `allow_bash: true` uses the `test`/`code` profile, where `git commit` and
+  `git push` remain denied.
+- Grants are enforced by OpenCode exactly like the defaults; the task message
+  merely tells the agent that the restriction was lifted.
+
+This was verified end-to-end: a granted researcher can create files, but a
+write attempt against `.env` is still rejected.
+
 ## Headless safety
 
 - No `ask` rules are emitted by the bridge.

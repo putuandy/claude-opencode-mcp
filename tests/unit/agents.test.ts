@@ -6,10 +6,13 @@ import { DEFAULT_CONFIG } from "../../src/config/config.js";
 import {
   agentCapabilities,
   buildAgentDefinitions,
+  expandAgentVariants,
+  isVariantAgentName,
   loadBuiltinAgentDefinitions,
   loadProjectAgentDefinitions,
   normalizeModel,
   parseAgentMarkdown,
+  resolveAgentVariant,
   toOpenCodeAgentConfig,
 } from "../../src/opencode/agents.js";
 
@@ -136,5 +139,77 @@ describe("project and config overrides", () => {
     expect(normalizeModel("deepseek/deepseek-v4-pro", DEFAULT_CONFIG)).toBe(
       "deepseek/deepseek-v4-pro",
     );
+  });
+});
+
+describe("permission overrides", () => {
+  async function researcher() {
+    const builtin = await loadBuiltinAgentDefinitions();
+    const definitions = buildAgentDefinitions({ builtin, project: [], config: DEFAULT_CONFIG });
+    return definitions.find((entry) => entry.name === "deepseek-researcher")!;
+  }
+
+  it("keeps the base name when no override is given", async () => {
+    const variant = resolveAgentVariant(await researcher());
+    expect(variant.name).toBe("deepseek-researcher");
+    expect(variant.capabilities).toEqual({ readOnly: true, canEdit: false, canRunBash: false });
+  });
+
+  it("grants edits through the safe edit profile", async () => {
+    const variant = resolveAgentVariant(await researcher(), { allowEdits: true });
+    expect(variant.name).toBe("deepseek-researcher__edit");
+    expect(variant.profile).toBe("edit");
+    expect(variant.capabilities).toEqual({ readOnly: false, canEdit: true, canRunBash: false });
+  });
+
+  it("grants edits and shell through the code profile", async () => {
+    const variant = resolveAgentVariant(await researcher(), {
+      allowEdits: true,
+      allowBash: true,
+    });
+    expect(variant.name).toBe("deepseek-researcher__rw");
+    expect(variant.profile).toBe("code");
+  });
+
+  it("grants shell only through the test profile", async () => {
+    const variant = resolveAgentVariant(await researcher(), { allowBash: true });
+    expect(variant.name).toBe("deepseek-researcher__bash");
+    expect(variant.profile).toBe("test");
+  });
+
+  it("revokes shell from coder while keeping edits", async () => {
+    const builtin = await loadBuiltinAgentDefinitions();
+    const definitions = buildAgentDefinitions({ builtin, project: [], config: DEFAULT_CONFIG });
+    const coder = definitions.find((entry) => entry.name === "deepseek-coder")!;
+    const variant = resolveAgentVariant(coder, { allowBash: false });
+    expect(variant.name).toBe("deepseek-coder__edit");
+    expect(variant.capabilities).toEqual({ readOnly: false, canEdit: true, canRunBash: false });
+  });
+
+  it("expands every agent into four capability variants with safe permissions", async () => {
+    const builtin = await loadBuiltinAgentDefinitions();
+    const definitions = buildAgentDefinitions({ builtin, project: [], config: DEFAULT_CONFIG });
+    const expanded = expandAgentVariants(definitions);
+    expect(expanded).toHaveLength(definitions.length * 4);
+
+    const names = expanded.map((entry) => entry.name);
+    expect(names).toContain("deepseek-researcher");
+    expect(names).toContain("deepseek-researcher__edit");
+    expect(names).toContain("deepseek-researcher__bash");
+    expect(names).toContain("deepseek-researcher__rw");
+
+    const config = toOpenCodeAgentConfig(expanded, DEFAULT_CONFIG);
+    const rw = config["deepseek-researcher__rw"]!;
+    expect(rw.permission.edit).toEqual(expect.objectContaining({ "*": "allow", "*.env": "deny" }));
+    const editor = config["deepseek-researcher__edit"]!;
+    expect(editor.permission.bash).toBe("deny");
+    expect(editor.permission.edit).toEqual(expect.objectContaining({ "*.env": "deny" }));
+  });
+
+  it("rejects agent names that use the reserved variant separator", async () => {
+    const builtin = await loadBuiltinAgentDefinitions();
+    const definitions = buildAgentDefinitions({ builtin, project: [], config: DEFAULT_CONFIG });
+    expect(() => expandAgentVariants([{ ...definitions[0]!, name: "bad__name" }])).toThrowError();
+    expect(isVariantAgentName("deepseek-coder__rw")).toBe(true);
   });
 });

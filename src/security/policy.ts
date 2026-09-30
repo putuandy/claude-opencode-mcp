@@ -2,7 +2,7 @@ import type { SecurityConfig } from "../config/config.js";
 import type { PermissionAction, PermissionConfig, PermissionRule } from "../types/index.js";
 import { DEFAULT_SENSITIVE_PATTERNS, SENSITIVE_ALLOWLIST } from "./paths.js";
 
-export type AgentProfile = "read" | "review" | "code" | "test";
+export type AgentProfile = "read" | "review" | "edit" | "code" | "test";
 
 export interface ProfileCapabilities {
   readOnly: boolean;
@@ -13,9 +13,18 @@ export interface ProfileCapabilities {
 export const PROFILE_CAPABILITIES: Record<AgentProfile, ProfileCapabilities> = {
   read: { readOnly: true, canEdit: false, canRunBash: false },
   review: { readOnly: true, canEdit: false, canRunBash: false },
+  edit: { readOnly: false, canEdit: true, canRunBash: false },
   code: { readOnly: false, canEdit: true, canRunBash: true },
   test: { readOnly: true, canEdit: false, canRunBash: true },
 };
+
+/** Pick the profile that matches an edit/shell capability combination. */
+export function profileForCapabilities(canEdit: boolean, canRunBash: boolean): AgentProfile {
+  if (canEdit && canRunBash) return "code";
+  if (canEdit) return "edit";
+  if (canRunBash) return "test";
+  return "read";
+}
 
 function sensitiveFileRules(security: SecurityConfig): PermissionRule {
   if (!security.protectEnvFiles) return "allow";

@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
   agentCapabilities,
   buildAgentDefinitions,
+  isVariantAgentName,
   loadProjectAgentDefinitions,
 } from "../../opencode/agents.js";
 import { getBuiltinDefinitions } from "../../opencode/setup.js";
@@ -56,19 +57,23 @@ export function registerListAgents(server: McpServer, ctx: AppContext): void {
           default_provider: config.defaults.provider,
           default_model: config.defaults.model,
           workspace: cwd,
-          agents: definitions.map((definition) => {
-            const capabilities = agentCapabilities(definition);
-            return {
-              name: definition.name,
-              description: definition.description,
-              mode: definition.mode,
-              read_only: capabilities.readOnly,
-              can_edit: capabilities.canEdit,
-              can_run_bash: capabilities.canRunBash,
-              model: definition.model ?? config.defaults.model,
-              source: definition.source,
-            };
-          }),
+          permission_overrides:
+            "delegate_task / create_session / send_message accept allow_edits and allow_bash (true grants, false revokes, omitted keeps the agent default).",
+          agents: definitions
+            .filter((definition) => !isVariantAgentName(definition.name))
+            .map((definition) => {
+              const capabilities = agentCapabilities(definition);
+              return {
+                name: definition.name,
+                description: definition.description,
+                mode: definition.mode,
+                read_only: capabilities.readOnly,
+                can_edit: capabilities.canEdit,
+                can_run_bash: capabilities.canRunBash,
+                model: definition.model ?? config.defaults.model,
+                source: definition.source,
+              };
+            }),
         });
       } catch (error) {
         ctx.logger.error("list_agents failed", {

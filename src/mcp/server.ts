@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import { fileURLToPath } from "node:url";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { LoadedConfig, ResolvedConfig } from "../config/config.js";
 import type { OpenCodeManager } from "../opencode/manager.js";
@@ -13,7 +15,19 @@ import { registerListAgents } from "./tools/list-agents.js";
 import { registerSendMessage } from "./tools/send-message.js";
 
 export const SERVER_NAME = "claude-opencode-mcp";
-export const SERVER_VERSION = "1.0.0";
+
+/** Read the version from the packaged package.json so it never drifts. */
+function resolveServerVersion(): string {
+  try {
+    const file = fileURLToPath(new URL("../../package.json", import.meta.url));
+    const pkg = JSON.parse(fs.readFileSync(file, "utf8")) as { version?: string };
+    return pkg.version ?? "0.0.0";
+  } catch {
+    return "0.0.0";
+  }
+}
+
+export const SERVER_VERSION = resolveServerVersion();
 
 export const SERVER_INSTRUCTIONS = [
   "Claude Code is the orchestrator; this server delegates focused tasks to OpenCode agents that run in the same workspace.",

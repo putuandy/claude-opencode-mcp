@@ -26,21 +26,38 @@ export function registerCreateSession(server: McpServer, ctx: AppContext): void 
           .optional()
           .describe('Override the model, e.g. "deepseek/deepseek-v4-pro".'),
         title: z.string().max(500).optional().describe("Human-readable session title."),
+        allow_edits: z
+          .boolean()
+          .optional()
+          .describe("Grant (true) or revoke (false) file edits for this session."),
+        allow_bash: z
+          .boolean()
+          .optional()
+          .describe("Grant (true) or revoke (false) shell commands for this session."),
       },
       annotations: { openWorldHint: true },
     },
-    async (args: { cwd: string; agent?: string; model?: string; title?: string }) => {
+    async (args: {
+      cwd: string;
+      agent?: string;
+      model?: string;
+      title?: string;
+      allow_edits?: boolean;
+      allow_bash?: boolean;
+    }) => {
       const rid = requestId();
       try {
         const prepared = await prepareRun(ctx, {
           cwd: args.cwd,
           agent: args.agent,
           model: args.model,
+          ...(args.allow_edits !== undefined ? { allowEdits: args.allow_edits } : {}),
+          ...(args.allow_bash !== undefined ? { allowBash: args.allow_bash } : {}),
         });
         const session = await createDelegatedSession(
           ctx,
           prepared,
-          args.title ?? defaultSessionTitle(prepared.definition.name, "session"),
+          args.title ?? defaultSessionTitle(prepared.baseAgentName, "session"),
         );
         return jsonResult({
           session_id: session.id,
@@ -49,6 +66,8 @@ export function registerCreateSession(server: McpServer, ctx: AppContext): void 
           model: session.model,
           title: session.title,
           status: session.status,
+          can_edit: session.canEdit ?? prepared.capabilities.canEdit,
+          can_run_bash: session.canRunBash ?? prepared.capabilities.canRunBash,
           created_at: session.createdAt,
         });
       } catch (error) {
