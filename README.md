@@ -47,8 +47,9 @@ editing and test execution. The bridge is deliberately thin.
 
 ## Features
 
-- **Seven focused MCP tools** — `delegate_task`, `create_session`,
-  `send_message`, `get_session`, `get_diff`, `abort_session`, `list_agents`.
+- **Eight focused MCP tools** — `delegate_task`, `create_session`,
+  `send_message`, `get_session`, `get_diff`, `abort_session`, `list_agents`,
+  `list_models`.
 - **Same worktree** — the delegated OpenCode server runs with your project as
   its working directory; the agent reads and edits the real files.
 - **Persistent sessions** — follow-up messages keep the agent's context across
@@ -284,6 +285,15 @@ Stops a running delegation. Safe to call when the session is idle.
 
 Lists the built-in agents plus project-local agents from
 `.claude-opencode/agents/`, with `read_only`, `can_edit`, `can_run_bash` flags.
+
+### `list_models`
+
+Lists every model OpenCode can use in the workspace, grouped by provider
+(`opencode models`), optionally for one `provider`. Agents are roles, not
+models: pass any listed `provider/model` as `model` to `delegate_task` or
+`create_session`. The server instructions tell the orchestrator to ask the user
+which provider to use before the first delegated task, then pick the model
+within that provider per task.
 
 ## Agents
 
