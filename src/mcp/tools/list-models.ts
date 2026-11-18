@@ -1,7 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { resolveOpenCodeBinary } from "../../opencode/binary.js";
-import { listOpenCodeModels } from "../../opencode/models.js";
+import { listOpenCodeModels, PROVIDER_ID_PATTERN } from "../../opencode/models.js";
 import { requestId } from "../../util/text.js";
 import { resolveWorkspace } from "../../workspace/resolver.js";
 import type { AppContext } from "../execute.js";
@@ -23,6 +23,7 @@ export function registerListModels(server: McpServer, ctx: AppContext): void {
         provider: z
           .string()
           .max(200)
+          .regex(PROVIDER_ID_PATTERN)
           .optional()
           .describe('Only list this provider, e.g. "deepseek".'),
       },
@@ -42,7 +43,11 @@ export function registerListModels(server: McpServer, ctx: AppContext): void {
           env: ctx.env,
         });
         const providers = await listOpenCodeModels(binary.command, workspace.cwd, args.provider);
-        return jsonResult({ default_model: config.defaults.model, providers });
+        return jsonResult({
+          default_provider: config.defaults.provider,
+          default_model: config.defaults.model,
+          providers,
+        });
       } catch (error) {
         ctx.logger.error("list_models failed", {
           request_id: rid,

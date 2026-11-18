@@ -25,7 +25,7 @@ export function registerCreateSession(server: McpServer, ctx: AppContext): void 
           .max(200)
           .optional()
           .describe(
-            'Model as provider/model from list_models (any provider), e.g. "deepseek/deepseek-v4-pro" or "aedoxy/claude-sonnet-5.5".',
+            'Model as provider/model from list_models (any provider), e.g. "deepseek/deepseek-v4-pro" or "anthropic/claude-sonnet-4-5".',
           ),
         title: z.string().max(500).optional().describe("Human-readable session title."),
         allow_edits: z
