@@ -24,7 +24,9 @@ export function registerCreateSession(server: McpServer, ctx: AppContext): void 
           .string()
           .max(200)
           .optional()
-          .describe('Override the model, e.g. "deepseek/deepseek-v4-pro".'),
+          .describe(
+            'Model as provider/model from list_models (any provider), e.g. "deepseek/deepseek-v4-pro" or "anthropic/claude-sonnet-4-5".',
+          ),
         title: z.string().max(500).optional().describe("Human-readable session title."),
         allow_edits: z
           .boolean()

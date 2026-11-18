@@ -93,7 +93,7 @@ afterEach(async () => {
 });
 
 describe("MCP tool surface", () => {
-  it("registers the seven PRD tools", async () => {
+  it("registers the eight tools", async () => {
     await setupApp({});
     const tools = await client.listTools();
     expect(tools.tools.map((tool) => tool.name).sort()).toEqual([
@@ -103,6 +103,7 @@ describe("MCP tool surface", () => {
       "get_diff",
       "get_session",
       "list_agents",
+      "list_models",
       "send_message",
     ]);
   });

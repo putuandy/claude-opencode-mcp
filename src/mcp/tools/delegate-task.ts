@@ -11,7 +11,7 @@ import { createDelegatedSession, defaultSessionTitle } from "../session-utils.js
 import { errorResult, jsonResult, type ToolExtra } from "../tool-utils.js";
 
 export const DELEGATE_TASK_DESCRIPTION = [
-  "Delegate a software-engineering task to an OpenCode agent (DeepSeek by default) that runs in the same workspace.",
+  "Delegate a software-engineering task to an OpenCode agent (any provider's model; DeepSeek by default) that runs in the same workspace.",
   "The agent explores the repository itself and returns a concise summary plus structured findings.",
   "Every agent can be granted or denied edits and shell access per call with allow_edits / allow_bash;",
   "grants still enforce the bridge security policy (sensitive-file protection for edits, no git history changes for shell).",
@@ -53,7 +53,9 @@ export function registerDelegateTask(server: McpServer, ctx: AppContext): void {
           .string()
           .max(200)
           .optional()
-          .describe('Override the model, e.g. "deepseek/deepseek-v4-pro".'),
+          .describe(
+            'Model as provider/model from list_models (any provider), e.g. "deepseek/deepseek-v4-pro" or "anthropic/claude-sonnet-4-5".',
+          ),
         timeout: z
           .number()
           .int()

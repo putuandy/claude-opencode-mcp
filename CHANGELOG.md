@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`list_models` tool.** Lists the models OpenCode can use in the workspace,
+  grouped by provider, so the orchestrator can run any agent on any provider's
+  model, not only DeepSeek.
+
+### Changed
+
+- Server instructions: agents are roles, not models. Before the first delegated
+  task the orchestrator calls `list_models` and asks the user which provider to
+  use, then picks the model within that provider for each task.
+
 ## [1.1.0] - 2026-09-30
 
 ### Added

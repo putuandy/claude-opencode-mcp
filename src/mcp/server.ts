@@ -12,6 +12,7 @@ import { registerDelegateTask } from "./tools/delegate-task.js";
 import { registerGetDiff } from "./tools/get-diff.js";
 import { registerGetSession } from "./tools/get-session.js";
 import { registerListAgents } from "./tools/list-agents.js";
+import { registerListModels } from "./tools/list-models.js";
 import { registerSendMessage } from "./tools/send-message.js";
 
 export const SERVER_NAME = "claude-opencode-mcp";
@@ -32,7 +33,8 @@ export const SERVER_VERSION = resolveServerVersion();
 export const SERVER_INSTRUCTIONS = [
   "Claude Code is the orchestrator; this server delegates focused tasks to OpenCode agents that run in the same workspace.",
   "Use delegate_task for one-shot work, or create_session + send_message for multi-step work that must keep context.",
-  "Read-only agents: deepseek-researcher, deepseek-reviewer. Editing agent: deepseek-coder. Test-running agent: deepseek-tester.",
+  "Agents are roles, not models: read-only deepseek-researcher and deepseek-reviewer, editing deepseek-coder, test-running deepseek-tester. Any agent can run on any provider's model through the `model` argument.",
+  "Before the first delegated task of a piece of work, call list_models and ask the user which provider to use (do not assume DeepSeek or the default). Then pick the model within that provider for each task yourself: the strongest model for coding and review, a fast or cheap one for research and test runs. Say which model each task used.",
   "After a coder session, call get_diff to inspect exactly what changed before reporting back to the user.",
   "Paths supplied to delegate_task are exploration hints, not boundaries.",
 ].join(" ");
@@ -71,6 +73,7 @@ export function createMcpServer(options: CreateMcpServerOptions): McpServer {
   registerGetDiff(server, ctx);
   registerAbortSession(server, ctx);
   registerListAgents(server, ctx);
+  registerListModels(server, ctx);
 
   return server;
 }
